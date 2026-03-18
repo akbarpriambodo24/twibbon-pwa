@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>TwibMaker — Buat Twibbon Gratis</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<!-- Firebase SDK -->
+<script src="/firebase-config.js"></script>
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.5.0/firebase-app.js';
+  import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.5.0/firebase-firestore.js';
+  import { getStorage, ref, uploadString, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.5.0/firebase-storage.js';
+  const _app = initializeApp(firebaseConfig);
+  window._db  = getFirestore(_app);
+  window._st  = getStorage(_app);
+  window._fb  = { doc, setDoc, getDoc, ref, uploadString, getDownloadURL };
+  window.dispatchEvent(new Event('firebase-ready'));
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--ink:#0f0e0d;--paper:#f5f2ec;--sf:#fff;--ac:#ff4d1c;--mu:#8a8680;--bd:#e2ddd8;--r:14px}
@@ -724,17 +736,76 @@ function setBg(c, el) {
   renderU(); saveConf();
 }
 
+// Debounce timer untuk saveConf agar tidak upload setiap keystroke
+let _saveTimer = null;
 function saveConf() {
   S.evName = document.getElementById('ev-name').value;
   S.evDesc = document.getElementById('ev-desc').value;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => _doSave(), 800);
+}
+
+async function _doSave() {
   if (!S.frameImg) return;
+  const btn = document.getElementById('copy-btn');
+  const urlEl = document.getElementById('share-url');
+  urlEl.value = 'Menyimpan ke cloud...';
+  btn.disabled = true;
+
+  // Jika Firebase belum siap atau belum dikonfigurasi, fallback ke localStorage
+  if (!window._db || firebaseConfig.apiKey.startsWith('GANTI')) {
+    _saveLocalFallback();
+    return;
+  }
+
+  try {
+    // Buat session ID unik (atau pakai yang sudah ada)
+    let sid = localStorage.getItem('twib_session_id');
+    if (!sid) { sid = Date.now().toString(36) + Math.random().toString(36).slice(2, 7); localStorage.setItem('twib_session_id', sid); }
+
+    // Upload gambar frame original ke Storage
+    const orig = document.createElement('canvas'); orig.width = CS; orig.height = CS;
+    orig.getContext('2d').drawImage(S.frameImg, 0, 0, CS, CS);
+    const frameDataUrl = orig.toDataURL('image/png');
+    const frameRef = window._fb.ref(window._st, 'sessions/' + sid + '/frame.png');
+    await window._fb.uploadString(frameRef, frameDataUrl, 'data_url');
+    const frameUrl = await window._fb.getDownloadURL(frameRef);
+
+    // Upload mask
+    const mc = document.getElementById('mc');
+    const maskDataUrl = mc ? mc.toDataURL('image/png') : '';
+    let maskUrl = '';
+    if (maskDataUrl) {
+      const maskRef = window._fb.ref(window._st, 'sessions/' + sid + '/mask.png');
+      await window._fb.uploadString(maskRef, maskDataUrl, 'data_url');
+      maskUrl = await window._fb.getDownloadURL(maskRef);
+    }
+
+    // Simpan config ke Firestore
+    await window._fb.setDoc(window._fb.doc(window._db, 'sessions', sid), {
+      bg: S.bgColor, name: S.evName, desc: S.evDesc,
+      frameUrl, maskUrl, updatedAt: Date.now()
+    });
+
+    const url = location.href.split('?')[0] + '?session=' + sid;
+    urlEl.value = url;
+    btn.disabled = false;
+    toast('✓ Konfigurasi tersimpan di cloud!');
+  } catch (err) {
+    console.error('Firebase save error:', err);
+    toast('⚠ Gagal simpan cloud — coba lagi atau isi firebase-config.js');
+    btn.disabled = false;
+    urlEl.value = 'Error — lihat konsol';
+  }
+}
+
+function _saveLocalFallback() {
   try {
     const mc = document.getElementById('mc');
     localStorage.setItem('twib_mask', mc ? mc.toDataURL() : '');
     localStorage.setItem('twib_conf', JSON.stringify({ bg: S.bgColor, name: S.evName, desc: S.evDesc }));
     const fc = document.getElementById('fc');
     if (fc) localStorage.setItem('twib_frame', fc.toDataURL());
-    // Also store original frame separately for re-punching after restore
     if (S.frameImg) {
       const orig = document.createElement('canvas'); orig.width = CS; orig.height = CS;
       orig.getContext('2d').drawImage(S.frameImg, 0, 0, CS, CS);
@@ -1047,7 +1118,57 @@ function toast(msg) {
 // ═══════════════════════════════════════════════════════
 //  RESTORE FROM LOCALSTORAGE
 // ═══════════════════════════════════════════════════════
-window.addEventListener('load', () => {
+// ══ Fungsi restore dari URL/localStorage ══
+async function _restoreSession() {
+  const params = new URLSearchParams(location.search);
+  const sid = params.get('session');
+  const mode = params.get('mode');
+
+  // Coba load dari Firebase jika ada session param
+  if (sid && window._db) {
+    try {
+      toast('⏳ Memuat sesi dari cloud...');
+      const snap = await window._fb.getDoc(window._fb.doc(window._db, 'sessions', sid));
+      if (snap.exists()) {
+        const d = snap.data();
+        if (d.bg) S.bgColor = d.bg;
+        if (d.name) { S.evName = d.name; document.getElementById('ev-name').value = d.name; }
+        if (d.desc) { S.evDesc = d.desc; document.getElementById('ev-desc').value = d.desc; }
+        // Load frame image
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          S.frameImg = img;
+          initMaskCanvas();
+          if (d.maskUrl) {
+            const mi = new Image(); mi.crossOrigin = 'anonymous';
+            mi.onload = () => {
+              mCtx.clearRect(0, 0, CS, CS);
+              mCtx.drawImage(mi, 0, 0, CS, CS);
+              S.maskData = mCtx.getImageData(0, 0, CS, CS);
+              updBounds(); redrawFrame(); renderPreview();
+              // Update share URL for admin who opened their own session
+              document.getElementById('share-url').value = location.href;
+              document.getElementById('copy-btn').disabled = false;
+              toast('✓ Sesi berhasil dimuat!');
+              // Auto-redirect participant to user tab
+              setTimeout(() => goTabName('user'), 300);
+            };
+            mi.src = d.maskUrl;
+          } else {
+            autoDetect();
+            setTimeout(() => goTabName('user'), 300);
+          }
+        };
+        img.onerror = () => toast('⚠ Gagal memuat gambar dari cloud');
+        img.src = d.frameUrl;
+        return; // done
+      }
+    } catch (err) {
+      console.warn('Firebase load error:', err);
+    }
+  }
+
+  // Fallback: load dari localStorage (perangkat admin sendiri)
   try {
     const origUrl = localStorage.getItem('twib_orig') || localStorage.getItem('twib_frame');
     const maskUrl = localStorage.getItem('twib_mask');
@@ -1070,17 +1191,27 @@ window.addEventListener('load', () => {
           };
           mi.src = maskUrl;
         } else { autoDetect(); }
-        saveConf();
+        _saveLocalFallback();
       };
       img.src = origUrl;
     }
   } catch (e) { console.warn(e); }
-  // URL mode=user
-  if (new URLSearchParams(location.search).get('mode') === 'user')
-    setTimeout(() => goTabName('user'), 400);
 
-  // Init tool UI
+  if (mode === 'user') setTimeout(() => goTabName('user'), 400);
+}
+
+window.addEventListener('load', () => {
   setTool('magic');
+  // Tunggu Firebase siap, lalu restore session
+  if (window._db) {
+    _restoreSession();
+  } else {
+    window.addEventListener('firebase-ready', () => _restoreSession(), { once: true });
+    // Timeout fallback: jika Firebase tidak load dalam 3 detik
+    setTimeout(() => {
+      if (!window._db) _restoreSession();
+    }, 3000);
+  }
 });
 </script>
 <script type="module" src="/main.js"></script>
