@@ -820,7 +820,9 @@ async function _doSave() {
     const orig = document.createElement('canvas'); orig.width = CS; orig.height = CS;
     orig.getContext('2d').drawImage(S.frameImg, 0, 0, CS, CS);
     const frameBlob = dataUrlToBlob(orig.toDataURL('image/png'));
-    await window._sb.storage.from('sessions').upload(sid + '/frame.png', frameBlob, { upsert: true, contentType: 'image/png' });
+    const { error: uploadFrameErr } = await window._sb.storage.from('sessions').upload(sid + '/frame.png', frameBlob, { upsert: true, contentType: 'image/png' });
+    if (uploadFrameErr) { console.error('[1] Upload frame error:', uploadFrameErr); throw new Error('Upload frame gagal: ' + uploadFrameErr.message); }
+
     const { data: fd } = window._sb.storage.from('sessions').getPublicUrl(sid + '/frame.png');
     const frameUrl = fd.publicUrl;
 
@@ -829,27 +831,28 @@ async function _doSave() {
     let maskUrl = '';
     if (mc) {
       const maskBlob = dataUrlToBlob(mc.toDataURL('image/png'));
-      await window._sb.storage.from('sessions').upload(sid + '/mask.png', maskBlob, { upsert: true, contentType: 'image/png' });
+      const { error: uploadMaskErr } = await window._sb.storage.from('sessions').upload(sid + '/mask.png', maskBlob, { upsert: true, contentType: 'image/png' });
+      if (uploadMaskErr) { console.error('[2] Upload mask error:', uploadMaskErr); throw new Error('Upload mask gagal: ' + uploadMaskErr.message); }
       const { data: md } = window._sb.storage.from('sessions').getPublicUrl(sid + '/mask.png');
       maskUrl = md.publicUrl;
     }
 
     // Simpan config ke tabel sessions (upsert)
-    const { error } = await window._sb.from('sessions').upsert({
+    const { error: dbErr } = await window._sb.from('sessions').upsert({
       id: sid, bg: S.bgColor, name: S.evName, desc: S.evDesc,
       frame_url: frameUrl, mask_url: maskUrl, updated_at: new Date().toISOString()
     });
-    if (error) throw error;
+    if (dbErr) { console.error('[3] DB upsert error:', dbErr); throw new Error('Simpan DB gagal: ' + dbErr.message); }
 
     const url = location.href.split('?')[0] + '?session=' + sid;
     urlEl.value = url;
     btn.disabled = false;
-    toast('✓ Konfigurasi tersimpan di cloud!');
+    toast('✓ Tersimpan! Link peserta sudah siap disalin.');
   } catch (err) {
     console.error('Supabase save error:', err);
-    toast('⚠ Gagal simpan cloud — cek supabase-config.js & bucket/tabel');
+    toast('⚠ ' + (err.message || 'Gagal simpan — cek bucket/tabel di Supabase'));
     btn.disabled = false;
-    urlEl.value = 'Error — lihat konsol';
+    urlEl.value = 'Error — lihat konsol (F12)';
   }
 }
 
