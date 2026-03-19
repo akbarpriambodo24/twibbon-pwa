@@ -1189,6 +1189,9 @@ async function _restoreSession() {
         } else {
           autoDetect();
           toast('Frame berhasil dimuat!');
+          if (sessionStorage.getItem('twib_role') === 'peserta') {
+            initUserView();
+          }
         }
       };
       img.onerror = () => toast('Gagal memuat frame dari cloud');
