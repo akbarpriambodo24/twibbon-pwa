@@ -785,8 +785,8 @@ async function _doSave() {
   if (!S.frameImg) return;
   const btn = document.getElementById('copy-btn');
   const urlEl = document.getElementById('share-url');
-  urlEl.value = 'Menyimpan ke cloud...';
-  btn.disabled = true;
+  if(urlEl) if(urlEl) urlEl.value = 'Menyimpan ke cloud...';
+  if(btn) btn.disabled = true;
 
   // Jika Supabase belum siap atau belum dikonfigurasi, fallback ke localStorage
   if (!window._sb) {
@@ -836,12 +836,12 @@ async function _doSave() {
     });
     if (dbErr) { console.error('[3] DB upsert error:', dbErr); throw new Error('Simpan DB gagal: ' + dbErr.message); }
 
-    btn.disabled = false;
+    if(btn) btn.disabled = false;
     toast('✓ Frame tersimpan! Peserta bisa login dan pasang foto.');
   } catch (err) {
     console.error('Supabase save error:', err);
     toast('⚠ ' + (err.message || 'Gagal simpan — cek bucket/tabel di Supabase'));
-    btn.disabled = false;
+    if(btn) btn.disabled = false;
   }
 }
 
@@ -1181,7 +1181,7 @@ async function _restoreSession() {
             if (sessionStorage.getItem('twib_role') === 'peserta') { initUserView(); }
             const urlEl = document.getElementById('share-url');
             const copyBtn = document.getElementById('copy-btn');
-            if (urlEl) urlEl.value = location.origin + location.pathname;
+            if (urlEl) if(urlEl) urlEl.value = location.origin + location.pathname;
             if (copyBtn) copyBtn.disabled = false;
             toast('Frame berhasil dimuat!');
           };
