@@ -1178,6 +1178,7 @@ async function _restoreSession() {
             mCtx.drawImage(mi, 0, 0, CS, CS);
             S.maskData = mCtx.getImageData(0, 0, CS, CS);
             updBounds(); redrawFrame(); renderPreview();
+            if (sessionStorage.getItem('twib_role') === 'peserta') { initUserView(); }
             const urlEl = document.getElementById('share-url');
             const copyBtn = document.getElementById('copy-btn');
             if (urlEl) urlEl.value = location.origin + location.pathname;
