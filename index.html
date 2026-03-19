@@ -1194,10 +1194,23 @@ async function _restoreSession() {
           }
         }
       };
-      img.onerror = () => toast('Gagal memuat frame dari cloud');
+      img.onerror = () => {
+        if (sessionStorage.getItem('twib_role') === 'peserta') {
+          const noFrame = document.getElementById('no-frame');
+          if (noFrame) noFrame.innerHTML = '<div style="font-size:56px;margin-bottom:16px">⚠️</div><div style="font-family:\'Syne\',sans-serif;font-size:18px;font-weight:800;margin-bottom:8px">Gagal memuat frame</div><div style="color:var(--mu)">Coba refresh halaman</div>';
+        } else {
+          toast('Gagal memuat frame dari cloud');
+        }
+      };
       img.src = d.frame_url;
     } else {
-      toast('Belum ada frame tersimpan. Upload lalu simpan.');
+      // Reset loading state untuk peserta
+      if (sessionStorage.getItem('twib_role') === 'peserta') {
+        const noFrame = document.getElementById('no-frame');
+        if (noFrame) noFrame.innerHTML = '<div style="font-size:56px;margin-bottom:16px">🖼</div><div style="font-family:\'Syne\',sans-serif;font-size:22px;font-weight:800;margin-bottom:8px">Frame belum disiapkan</div><div style="color:var(--mu);margin-bottom:24px">Admin perlu setup frame terlebih dahulu.</div>';
+      } else {
+        toast('Belum ada frame tersimpan. Upload lalu simpan.');
+      }
     }
   } catch (err) {
     console.warn('Restore error:', err);
@@ -1254,16 +1267,22 @@ function _applyAuth(role, label) {
   if (role === 'admin') {
     document.body.classList.remove('participant-mode');
     goTabName('admin');
+    if (window._sb) { _restoreSession(); }
+    else { window.addEventListener('supabase-ready', () => _restoreSession(), { once: true }); setTimeout(() => { if (!window._sb) _restoreSession(); }, 3000); }
   } else {
     document.body.classList.add('participant-mode');
-    goTabName('user');
-  }
-  // Kedua role load frame dari session yang sama
-  if (window._sb) {
-    _restoreSession();
-  } else {
-    window.addEventListener('supabase-ready', () => _restoreSession(), { once: true });
-    setTimeout(() => { if (!window._sb) _restoreSession(); }, 3000);
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const userTab = document.querySelector('.tab-user');
+    if (userTab) userTab.classList.add('active');
+    const userPage = document.getElementById('user');
+    if (userPage) userPage.classList.add('active');
+    const noFrame = document.getElementById('no-frame');
+    if (noFrame) { noFrame.style.display = 'block'; noFrame.innerHTML = '<div style="font-size:40px;margin-bottom:16px">⏳</div><div style="font-family:Syne,sans-serif;font-size:18px;font-weight:800;margin-bottom:8px">Memuat frame...</div><div style="color:var(--mu)">Mohon tunggu sebentar</div>'; }
+    const uPanel = document.getElementById('u-panel');
+    if (uPanel) uPanel.style.display = 'none';
+    if (window._sb) { _restoreSession(); }
+    else { window.addEventListener('supabase-ready', () => _restoreSession(), { once: true }); setTimeout(() => { if (!window._sb) _restoreSession(); }, 3000); }
   }
 }
 
