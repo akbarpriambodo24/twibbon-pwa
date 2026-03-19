@@ -1144,10 +1144,14 @@ function toast(msg) {
 // ══ Fungsi restore sesi dari Supabase (selalu load 'default') ══
 async function _restoreSession() {
   if (!window._sb) return;
+  const role = sessionStorage.getItem('twib_role');
   try {
     toast('⏳ Memuat frame dari cloud...');
     const { data, error } = await window._sb.from('sessions').select('*').eq('id', 'default').single();
-    if (error || !data) { toast('Frame belum disiapkan admin.'); return; }
+    if (error || !data) {
+      toast(role === 'peserta' ? 'Frame belum disiapkan admin.' : 'Belum ada frame tersimpan. Upload lalu simpan.');
+      return;
+    }
     const d = data;
     if (d.bg) S.bgColor = d.bg;
     if (d.name) { S.evName = d.name; const el = document.getElementById('ev-name'); if (el) el.value = d.name; }
@@ -1155,7 +1159,7 @@ async function _restoreSession() {
     const img = new Image(); img.crossOrigin = 'anonymous';
     img.onload = () => {
       S.frameImg = img;
-      initMaskCanvas();
+      initMaskCanvas(); // setup canvas admin (fc/mc/dc)
       if (d.mask_url) {
         const mi = new Image(); mi.crossOrigin = 'anonymous';
         mi.onload = () => {
@@ -1163,14 +1167,21 @@ async function _restoreSession() {
           mCtx.drawImage(mi, 0, 0, CS, CS);
           S.maskData = mCtx.getImageData(0, 0, CS, CS);
           updBounds(); redrawFrame(); renderPreview();
-          toast('✓ Frame siap! Upload foto kamu.');
-          initUserView();
+          if (role === 'peserta') {
+            toast('✓ Frame siap — upload foto kamu!');
+            initUserView();
+          } else {
+            toast('✓ Frame dimuat dari cloud.');
+            // aktifkan tombol simpan agar admin bisa update ulang
+            const sb = document.getElementById('save-cloud-btn');
+            if (sb) sb.disabled = false;
+          }
         };
         mi.src = d.mask_url;
       } else {
         autoDetect();
-        toast('✓ Frame siap! Upload foto kamu.');
-        initUserView();
+        if (role === 'peserta') { toast('✓ Frame siap!'); initUserView(); }
+        else { toast('✓ Frame dimuat.'); }
       }
     };
     img.onerror = () => toast('⚠ Gagal memuat gambar dari cloud');
@@ -1202,7 +1213,7 @@ function doLogin() {
   errEl.textContent = '';
   sessionStorage.setItem('twib_role', found.role);
   sessionStorage.setItem('twib_label', found.label);
-  _applyAuth(found.role, found.label);
+  _afterLogin(found.role, found.label);
 }
 
 function doLogout() {
@@ -1229,7 +1240,7 @@ function _applyAuth(role, label) {
   const ov = document.getElementById('login-overlay');
   if (ov) ov.style.display = 'none';
 
-  // Tampilkan badge + tombol logout
+  // Tampilkan badge + tombol logout di header
   const rb = document.getElementById('role-badge');
   const lb = document.getElementById('logout-btn');
   if (rb) { rb.textContent = label; rb.style.display = ''; }
@@ -1241,40 +1252,28 @@ function _applyAuth(role, label) {
   } else {
     document.body.classList.add('participant-mode');
     goTabName('user');
-    // Auto-load frame terbaru dari Supabase untuk peserta
-    const doLoad = () => _restoreSession();
-    if (window._sb) {
-      doLoad();
-    } else {
-      window.addEventListener('supabase-ready', doLoad, { once: true });
-      setTimeout(() => { if (!window._sb) doLoad(); }, 3000);
-    }
+  }
+}
+
+// Helper: apply auth lalu load frame dari cloud
+function _afterLogin(role, label) {
+  _applyAuth(role, label);
+  const doRestore = () => _restoreSession();
+  if (window._sb) { doRestore(); }
+  else {
+    window.addEventListener('supabase-ready', doRestore, { once: true });
+    setTimeout(() => { if (!window._sb) doRestore(); }, 3000);
   }
 }
 
 window.addEventListener('load', () => {
   setTool('magic');
-
   const role  = sessionStorage.getItem('twib_role');
   const label = sessionStorage.getItem('twib_label');
-
   if (role) {
-    // Sudah login — langsung tampilkan
-    _applyAuth(role, label);
-    // Restore session dari Supabase / localStorage
-    const doRestore = () => _restoreSession();
-    if (window._sb) {
-      doRestore();
-    } else {
-      window.addEventListener('supabase-ready', doRestore, { once: true });
-      setTimeout(() => { if (!window._sb) doRestore(); }, 3000);
-    }
+    _afterLogin(role, label); // apply view + auto-load frame
   } else {
-    // Belum login — tampilkan overlay, fokus ke input username
-    setTimeout(() => {
-      const inp = document.getElementById('l-user');
-      if (inp) inp.focus();
-    }, 200);
+    setTimeout(() => { const inp = document.getElementById('l-user'); if (inp) inp.focus(); }, 200);
   }
 });
 </script>
