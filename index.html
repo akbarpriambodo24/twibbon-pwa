@@ -115,6 +115,9 @@ nav{background:var(--sf);border-bottom:1px solid var(--bd);padding:0 32px;displa
 #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:10px 22px;border-radius:100px;font-size:13px;font-weight:500;opacity:0;transition:all .3s;z-index:9999;pointer-events:none;white-space:nowrap}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 footer{text-align:center;color:var(--mu);font-size:11px;padding:28px 0 16px}
+/* participant mode: sembunyikan tab admin */
+body.participant-mode nav .tab-admin { display: none; }
+body.participant-mode nav .tab-user { pointer-events: none; border-bottom-color: var(--ac) !important; color: var(--ink) !important; }
 @media(max-width:820px){.tcol{grid-template-columns:1fr}header,nav{padding-left:20px;padding-right:20px}.page{padding:20px}}
 </style>
 </head>
@@ -126,9 +129,9 @@ footer{text-align:center;color:var(--mu);font-size:11px;padding:28px 0 16px}
   <div class="hbadge">Tanpa Watermark</div>
 </header>
 
-<nav>
-  <button class="tab active" onclick="goTab('admin',this)">⚙ Admin — Setup Frame</button>
-  <button class="tab" onclick="goTab('user',this)">🖼 Peserta — Pasang Foto</button>
+<nav id="main-nav">
+  <button class="tab tab-admin active" onclick="goTab('admin',this)">⚙ Admin — Setup Frame</button>
+  <button class="tab tab-user" onclick="goTab('user',this)">🖼 Peserta — Pasang Foto</button>
 </nav>
 
 <!-- ═══════════════ ADMIN ═══════════════ -->
@@ -408,7 +411,10 @@ function handleFrame(file) {
       showSt(st, 'ok', '✓ Frame dimuat! (' + img.width + '×' + img.height + 'px)');
       initMaskCanvas();
       autoDetect();
-      saveConf();
+      // Langsung simpan ke cloud tanpa debounce
+      S.evName = document.getElementById('ev-name').value;
+      S.evDesc = document.getElementById('ev-desc').value;
+      _doSave();
     };
     img.src = ev.target.result;
   };
@@ -1168,6 +1174,8 @@ async function _restoreSession() {
         };
         img.onerror = () => toast('⚠ Gagal memuat gambar dari cloud');
         img.src = d.frame_url;
+        // Aktifkan mode peserta: sembunyikan tab admin
+        document.body.classList.add('participant-mode');
         return; // done
       }
     } catch (err) {
